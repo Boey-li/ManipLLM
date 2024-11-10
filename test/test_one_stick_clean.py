@@ -74,7 +74,7 @@ if not eval_conf.no_gui:
 
 
 # load shape
-object_urdf_fn = '../data_collection/asset/original_sapien_dataset/%s/mobility.urdf' % shape_id
+object_urdf_fn = '../data_collection/asset/dataset/%s/mobility.urdf' % shape_id
 flog.write('object_urdf_fn: %s\n' % object_urdf_fn)
 object_material = env.get_material(4, 4, 0.01)
 state = replay_data['object_state']
@@ -82,6 +82,7 @@ flog.write('Object State: %s\n' % state)
 out_info['object_state'] = state
 scale = replay_data['scale']
 env.load_object(scale, object_urdf_fn, object_material, state=state)
+
 joint_angles = replay_data['joint_angles']
 env.set_object_joint_angles(joint_angles)
 out_info['joint_angles'] = joint_angles
@@ -124,6 +125,7 @@ img = Image.fromarray((rgb*255).astype(np.uint8))
 gt_nor = cam.get_normal_map()
 Image.fromarray(((gt_nor+1)/2*255).astype(np.uint8)).save(os.path.join(out_dir, 'gt_nor.png'))
 
+# movale mask
 object_link_ids = env.movable_link_ids
 gt_movable_link_mask = cam.get_movable_link_mask(object_link_ids)
 mask = (gt_movable_link_mask > 0)
@@ -141,6 +143,7 @@ else:
 
 print('answer from model: ', result)
 
+# extract the contact point
 object_link_ids = env.movable_link_ids
 gt_movable_link_mask = cam.get_movable_link_mask(object_link_ids)
 x, y = result.split('(')[1].split(')')[0].split(', ')
@@ -155,6 +158,7 @@ norm_dir = gt_nor[x,y]
 gt_nor = cam.get_normal_map()
 Image.fromarray(((gt_nor+1)/2*255).astype(np.uint8)).save(os.path.join(out_dir, 'gt_nor.png'))
 
+# extract the gripper direction and gripper forward direction
 d_x, d_y, d_z = result.split('[')[1].split(']')[0].split(', ')
 gripper_direction_camera = np.array([int(d_x)*0.02, int(d_y)*0.02, int(d_z)*0.02])
 fd_x, fd_y, fd_z = result.split('[')[2].split(']')[0].split(', ')
@@ -164,6 +168,7 @@ draw = ImageDraw.Draw(img)
 draw.point((y,x),'red')
 img.save(os.path.join(out_dir, 'contact_point.png'))
 
+# project the contact point to the 3D camera and world coordinate
 cam_XYZA_id1, cam_XYZA_id2, cam_XYZA_pts,out = cam.compute_camera_XYZA(depth)
 cam_XYZA = cam.compute_XYZA_matrix(cam_XYZA_id1, cam_XYZA_id2, cam_XYZA_pts, depth.shape[0], depth.shape[1])
 position_cam = cam_XYZA[x, y, :3]
@@ -172,22 +177,26 @@ position_cam_xyz1 = np.ones((4), dtype=np.float32)
 position_cam_xyz1[:3] = position_cam
 position_world_xyz1 = cam.get_metadata()['mat44'] @ position_cam_xyz1
 position_world = position_world_xyz1[:3]
+
+# set the target part
 target_part_id = object_link_ids[gt_movable_link_mask[x, y] - 1]
 env.set_target_object_part_actor_id(target_part_id)
 out_info['target_object_part_actor_id'] = env.target_object_part_actor_id
 out_info['target_object_part_joint_id'] = env.target_object_part_joint_id
 
 
-def plot_mani(cam,up, forward):
+def plot_mani(cam, up, forward):
     # we use the norm of the contact point to correct tge z-axis of end-effector
     if (up @ norm_dir[:3] ) > 0:
         up = -up
 
+    # convert the gripper direction and forward direction to world coordinate
     up /= np.linalg.norm(up)
-    up = cam.get_metadata()['mat44'][:3,:3] @ up
-    forward = cam.get_metadata()['mat44'][:3,:3] @ forward
+    up = cam.get_metadata()['mat44'][:3,:3] @ up # (3,)
+    forward = cam.get_metadata()['mat44'][:3,:3] @ forward # (3,)
     out_info['gripper_direction_world'] = up.tolist()
     
+    # compute rotation matrix
     up = np.array(up, dtype=np.float32)
     up /= np.linalg.norm(up)
     forward = np.array(forward, dtype=np.float32)
@@ -236,7 +245,7 @@ def plot_mani(cam,up, forward):
     
     success = True
     target_link_mat44 = env.get_target_part_pose().to_transformation_matrix()
-    position_local_xyz1 = np.linalg.inv(target_link_mat44) @ position_world_xyz1
+    position_local_xyz1 = np.linalg.inv(target_link_mat44) @ position_world_xyz1 # (4,)
     
     
     robot.close_gripper()
@@ -249,6 +258,7 @@ def plot_mani(cam,up, forward):
     rgb_final_pose, _ = cam.get_observation()
     Image.fromarray((rgb_final_pose*255).astype(np.uint8)).save(os.path.join(out_dir, 'viz_mid_pose.png'))
     
+    # check if the gripper is in contact with the object?
     suction_drive = env.scene.create_drive(
                 robot.robot.get_links()[-1],
                 robot.robot.get_links()[-1].get_cmass_local_pose(),
@@ -270,6 +280,8 @@ def plot_mani(cam,up, forward):
     position_world_xyz1_end = target_link_mat44 @ position_local_xyz1
     out_info['touch_position_world_xyz_start'] = position_world_xyz1[:3].tolist()
     out_info['touch_position_world_xyz_end'] = position_world_xyz1_end[:3].tolist()
+    
+    # evaluate the initial movement
     if success==True:
         succ=True
         out_info['final_target_part_qpos'],_,_ = env.get_target_part_qpos()
@@ -280,6 +292,8 @@ def plot_mani(cam,up, forward):
         mani_success = (abs_motion > 0.03) or (abs_motion / tot_motion > 0.5)
     else:
         mani_success = False
+    
+    # evaluate the direction for pulling
     if mani_success:
         if primact_type == 'pushing':
             mani_success = mani_success
@@ -289,11 +303,12 @@ def plot_mani(cam,up, forward):
             mov_dir /= np.linalg.norm(mov_dir)
             intended_dir = -np.array(out_info['gripper_direction_world'], dtype=np.float32)
             mani_success = (intended_dir @ mov_dir > 0.3)
+    
     return success, mani_success
 
-success, mani_succ = plot_mani(cam,gripper_direction_camera, gripper_forward_direction_camera)
+success, mani_succ = plot_mani(cam, gripper_direction_camera, gripper_forward_direction_camera)
+
 out_info['succ'] = np.array(success, dtype=bool).tolist()
- 
 out_info['mani_succ'] = np.array(mani_succ, dtype=bool).tolist()
 rgb_final_pose, _ = cam.get_observation()
 Image.fromarray((rgb_final_pose*255).astype(np.uint8)).save(os.path.join(out_dir, 'viz_target_pose.png'))
