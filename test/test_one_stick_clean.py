@@ -44,7 +44,6 @@ torch.manual_seed(0)
 
 #previous info are saved in result.json
 shape_id, category, cnt_id, primact_type, trial_id = eval_conf.record_name.split('_')
-
 out_dir = os.path.join(eval_conf.out_dir, '%s_%s_%s_%s_%d' % (shape_id, category, cnt_id, primact_type, int(trial_id)))
 
 
@@ -125,7 +124,7 @@ img = Image.fromarray((rgb*255).astype(np.uint8))
 gt_nor = cam.get_normal_map()
 Image.fromarray(((gt_nor+1)/2*255).astype(np.uint8)).save(os.path.join(out_dir, 'gt_nor.png'))
 
-# movale mask
+# moveable mask
 object_link_ids = env.movable_link_ids
 gt_movable_link_mask = cam.get_movable_link_mask(object_link_ids)
 mask = (gt_movable_link_mask > 0)
@@ -169,7 +168,7 @@ draw.point((y,x),'red')
 img.save(os.path.join(out_dir, 'contact_point.png'))
 
 # project the contact point to the 3D camera and world coordinate
-cam_XYZA_id1, cam_XYZA_id2, cam_XYZA_pts,out = cam.compute_camera_XYZA(depth)
+cam_XYZA_id1, cam_XYZA_id2, cam_XYZA_pts, out = cam.compute_camera_XYZA(depth)
 cam_XYZA = cam.compute_XYZA_matrix(cam_XYZA_id1, cam_XYZA_id2, cam_XYZA_pts, depth.shape[0], depth.shape[1])
 position_cam = cam_XYZA[x, y, :3]
 

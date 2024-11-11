@@ -4,8 +4,10 @@
 import numpy as np
 from sapien.core import Pose
 import utils
+import open3d as o3d
 # import wandb
 # wandb.init(project="multi-view-0110")
+
 class Camera(object):
 
     def __init__(self, env, near=0.1, far=100.0, image_size=336, dist=5.0, \
@@ -95,15 +97,35 @@ class Camera(object):
 
     def get_observation(self):
         self.camera.take_picture()
-        rgba = self.camera.get_color_rgba()
+        rgba = self.camera.get_color_rgba() # (H, W, 4)
         rgba = (rgba * 255).clip(0, 255).astype(np.float32) / 255
         white = np.ones((rgba.shape[0], rgba.shape[1], 3), dtype=np.float32)
         mask = np.tile(rgba[:, :, 3:4], [1, 1, 3])
         rgb = rgba[:, :, :3] * mask + white * (1 - mask)
-        depth = self.camera.get_depth().astype(np.float32)
+        depth = self.camera.get_depth().astype(np.float32) # (H, W)
         # depth = self.camera.get_depth()
         return rgb, depth
-
+    
+    # add by baoyu, 11/10/2024
+    # def get_pcd(self):
+    #     import ipdb; ipdb.set_trace()
+    #     # Each pixel is (x, y, z, render_depth) in camera space (OpenGL/Blender)
+    #     position = self.camera.get_float_texture('Position') # (H, W, 4)
+    #     rgba = self.camera.get_color_rgba() # (H, W, 4)
+    #     # OpenGL/Blender: y up and -z forward
+    #     points_opengl = position[..., :3][position[..., 3] < 1]
+    #     points_color = rgba[position[..., 3] < 1][..., :3]
+    #     # Model matrix is the transformation from OpenGL camera space to SAPIEN world space
+    #     # camera.get_model_matrix() must be called after scene.update_render()!
+    #     self.env.scene.update_render()
+    #     model_matrix = self.camera.get_model_matrix()
+    #     points_world = points_opengl @ model_matrix[:3, :3].T + model_matrix[:3, 3]
+    #     # generate point cloud
+    #     pcd = o3d.geometry.PointCloud()
+    #     pcd.points = o3d.utility.Vector3dVector(points_world)
+    #     pcd.colors = o3d.utility.Vector3dVector(points_color)
+    #     return pcd
+    
     def compute_camera_XYZA(self, depth):
         camera_matrix = self.camera.get_camera_matrix()[:3, :3]
         y, x = np.where(depth < 1)

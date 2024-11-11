@@ -19,7 +19,10 @@ else:
     exit()
     
 processgen = Processgen(conf.num_processes)
-record_names = os.listdir(conf.out_dir)
+
+record_dir = './test_results/result_ori'
+record_names = os.listdir(record_dir)
+
 for record_name in record_names:
     processgen.add_one_test_job(record_name,conf)
 processgen.start_all()
